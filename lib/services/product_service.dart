@@ -57,6 +57,7 @@ class ProductService {
           "category": p["category"],
           "name": p["name"],
           "sellPrice": p["sellPrice"],
+          "buyPrice": p["buyPrice"], // ✅ NEW 
           "barcode": code,
         };
       }
@@ -102,4 +103,47 @@ class ProductService {
   static Future<void> clearAll() async {
     await box.clear();
   }
+
+  
+  // 🔍 SEARCH PRODUCTS BY PARTIAL INVOICE / BARCODE  
+  static List<Map> searchByQuery(String query) {
+  final all = getAllProducts();
+
+  List<Map> results = [];
+
+  for (var p in all) {
+    List barcodes = p["barcodes"] ?? [];
+
+    // match category + name + barcode
+    String key = "${p["category"]}_${p["name"]}".toLowerCase();
+
+    if (key.contains(query.toLowerCase())) {
+      results.add({
+        "category": p["category"],
+        "name": p["name"],
+        "sellPrice": p["sellPrice"],
+        "buyPrice": p["buyPrice"],
+        "barcode": barcodes.isNotEmpty ? barcodes.first : "",
+      });
+      continue;
+    }
+
+    for (var code in barcodes) {
+      if (code.toString().contains(query)) {
+        results.add({
+          "category": p["category"],
+          "name": p["name"],
+          "sellPrice": p["sellPrice"],
+          "buyPrice": p["buyPrice"],
+          "barcode": code,
+        });
+        break;
+      }
+    }
+  }
+
+  return results;
 }
+
+}
+

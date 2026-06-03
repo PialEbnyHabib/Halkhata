@@ -11,6 +11,11 @@ class StocksPage extends StatefulWidget {
 class _StocksPageState extends State<StocksPage> {
   List<Map> products = [];
 
+  int lowStockLimit = 3;
+
+  String? selectedCategory;
+  Map? selectedProduct;
+
   @override
   void initState() {
     super.initState();
@@ -22,6 +27,30 @@ class _StocksPageState extends State<StocksPage> {
     setState(() {});
   }
 
+  Future<void> deleteProduct(String category, String name) async {
+    await ProductService.deleteProductGroup(
+      category: category,
+      name: name,
+    );
+
+    loadData();
+  }
+
+  // ================= GROUP BY CATEGORY =================
+  Map<String, List<Map>> get groupedByCategory {
+    Map<String, List<Map>> map = {};
+
+    for (var p in products) {
+      String category = p["category"];
+
+      map.putIfAbsent(category, () => []);
+      map[category]!.add(p);
+    }
+
+    return map;
+  }
+
+  // ================= BARCODE VIEW =================
   void showBarcodes(List barcodes, String name) {
     showDialog(
       context: context,
@@ -52,49 +81,158 @@ class _StocksPageState extends State<StocksPage> {
     );
   }
 
-  Future<void> deleteProduct(String category, String name) async {
-    await ProductService.deleteProductGroup(
-      category: category,
-      name: name,
-    );
-
-    loadData();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("স্টক")),
+      appBar: AppBar(
+        title: Text(
+          selectedCategory == null
+              ? "Stock Categories"
+              : selectedProduct == null
+                  ? "Products"
+                  : "Barcodes",
+        ),
+
+        leading: selectedCategory != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  setState(() {
+                    if (selectedProduct != null) {
+                      selectedProduct = null;
+                    } else {
+                      selectedCategory = null;
+                    }
+                  });
+                },
+              )
+            : null,
+      ),
 
       body: products.isEmpty
           ? const Center(child: Text("No Products"))
-          : ListView.builder(
-              itemCount: products.length,
-              itemBuilder: (context, index) {
-                final p = products[index];
+          : selectedCategory == null
+              ? _buildCategoryView()
+              : selectedProduct == null
+                  ? _buildProductView()
+                  : _buildBarcodeView(),
+    );
+  }
 
-                final category = p["category"].toString();
-                final name = p["name"].toString();
-                final barcodes = (p["barcodes"] as List?) ?? [];
+  // ================= 1. CATEGORY VIEW =================
+  Widget _buildCategoryView() {
+    final categories = groupedByCategory.keys.toList();
 
-                return Card(
-                  child: ListTile(
-                    title: Text("$category → $name"),
-                    subtitle: Text("Stock: ${barcodes.length}"),
+    return ListView.builder(
+      itemCount: categories.length,
+      itemBuilder: (context, index) {
+        final cat = categories[index];
 
-                    // 👇 CLICK TO SEE ALL BARCODES
-                    onTap: () => showBarcodes(barcodes, name),
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: ListTile(
+            leading: const Icon(Icons.category),
+            title: Text(cat),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: () {
+              setState(() {
+                selectedCategory = cat;
+              });
+            },
+          ),
+        );
+      },
+    );
+  }
 
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        await deleteProduct(category, name);
-                      },
+  // ================= 2. PRODUCT VIEW (WITH DELETE) =================
+  Widget _buildProductView() {
+    final productsInCategory =
+        groupedByCategory[selectedCategory] ?? [];
+
+    return ListView.builder(
+      itemCount: productsInCategory.length,
+      itemBuilder: (context, index) {
+        final p = productsInCategory[index];
+
+        final name = p["name"];
+        final category = p["category"];
+        final barcodes = p["barcodes"] as List;
+
+        bool isLow = barcodes.length < lowStockLimit;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          color: isLow ? Colors.red.shade50 : null,
+
+          child: ListTile(
+            title: Text(
+              name,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isLow ? Colors.red : Colors.black,
+              ),
+            ),
+
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Stock: ${barcodes.length}"),
+
+                if (isLow)
+                  const Text(
+                    "⚠️ Low Stock",
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                );
-              },
+              ],
             ),
+
+            // CLICK PRODUCT → BARCODE VIEW
+            onTap: () {
+              setState(() {
+                selectedProduct = p;
+              });
+            },
+
+            // DELETE BUTTON + NAV ICON
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () async {
+                    await deleteProduct(category, name);
+
+                    setState(() {
+                      selectedProduct = null;
+                    });
+                  },
+                ),
+
+                const Icon(Icons.arrow_forward_ios, size: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ================= 3. BARCODE VIEW =================
+  Widget _buildBarcodeView() {
+    final barcodes = selectedProduct!["barcodes"] as List;
+
+    return ListView.builder(
+      itemCount: barcodes.length,
+      itemBuilder: (context, index) {
+        return ListTile(
+          leading: const Icon(Icons.qr_code),
+          title: Text(barcodes[index].toString()),
+        );
+      },
     );
   }
 }
